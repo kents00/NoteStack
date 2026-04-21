@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Remix: NoteStack: AI Research Assistant",
+  "description": "A high-performance research assistant that allows users to upload documents and chat with them using the Gemini API.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
