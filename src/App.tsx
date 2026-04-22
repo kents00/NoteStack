@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useWorkspaceData } from './hooks/useWorkspaceData';
+import { parseDateValue, toChatSession, sortChatSessionsByRecent } from './utils/chat';
 import { api, type CloudApiProvider, type CloudProviderValidationResult, type LocalEndpointType } from './services/api';
 import { Upload, FileText, X, Send, Bot, User, Loader2, File, Plus, Settings, Trash2, Database, Cpu, Pin, PanelRightClose, PanelRightOpen, Folder as FolderIcon, ChevronDown, ChevronRight, Edit2, CheckSquare, FolderPlus, Menu, Download, Eye, EyeOff, Check, ArrowDown, ArrowUp, Info, Merge, Search, Sparkles, Filter, SlidersHorizontal, XCircle, Mic, ThumbsUp, ThumbsDown, Copy, MoreVertical, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -26,76 +28,24 @@ import {
   type CitationStreamState,
 } from './utils/citationStream';
 
-type Document = {
-  id: string;
-  name: string;
-  mimeType: string;
-  base64?: string;
-  folderId?: string;
-  size?: number;
-  timestamp?: number;
-};
+import {
+  type Document,
+  type Folder,
+  type Message,
+  type Note,
+  type UploadingFile,
+  type ApiProvider,
+  type MessageFeedback,
+  type CloudValidationStatus,
+  type CloudValidationState,
+  type ChatSession,
+  type RightPanelTab,
+  type ChatGoalMode,
+  type ChatResponseLength,
+  type RegenerateMode,
+  type ChatSessionConfig
+} from './types';
 
-type Folder = {
-  id: string;
-  name: string;
-  isExpanded?: boolean;
-  timestamp?: number;
-};
-
-type Message = {
-  id: string;
-  role: 'user' | 'model';
-  text: string;
-  attachedFiles?: Document[];
-  citations?: CitationItem[];
-  citationStatus?: 'full' | 'partial';
-  citationStatusReason?: string;
-  bubbleStyle?: React.CSSProperties;
-};
-
-type Note = {
-  id: string;
-  title: string;
-  content: string;
-  timestamp: number;
-};
-
-type UploadingFile = {
-  id: string;
-  name: string;
-  progress: number;
-};
-
-type ApiProvider = 'gemini' | 'openai' | 'anthropic' | 'cerebras' | 'openrouter' | 'openai_compatible' | 'local';
-type MessageFeedback = 'like' | 'dislike';
-type CloudValidationStatus = 'idle' | 'checking' | 'valid' | 'invalid';
-
-type CloudValidationState = {
-  status: CloudValidationStatus;
-  message: string;
-  defaultModel?: string;
-  resolvedModel?: string;
-  fallbackApplied?: boolean;
-  selectedModelAccessible?: boolean;
-};
-
-type ChatSession = {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-};
-
-type RightPanelTab = 'notes' | 'configure' | 'history';
-type ChatGoalMode = 'default' | 'learning-guide';
-type ChatResponseLength = 'default' | 'longer' | 'shorter';
-type RegenerateMode = 'try_again' | 'think_longer';
-
-type ChatSessionConfig = {
-  goalMode: ChatGoalMode;
-  responseLength: ChatResponseLength;
-};
 
 const SETTINGS_STORAGE_KEYS = {
   apiProvider: 'notestack-api-provider',
@@ -270,14 +220,11 @@ export default function App() {
   });
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
   const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null);
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [sessionChatConfigs, setSessionChatConfigs] = useState<Record<string, ChatSessionConfig>>(() => readStoredChatSessionConfigs());
   const [activeChatConfig, setActiveChatConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_SESSION_CONFIG);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -348,15 +295,6 @@ export default function App() {
       return ENHANCED_DEFAULT_SYSTEM_INSTRUCTIONS;
     }
   });
-  const [notes, setNotes] = useState<Note[]>(() => {
-    try {
-      const saved = localStorage.getItem('notestack-notes');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error("Failed to load notes", e);
-      return [];
-    }
-  });
   const [noteMenuOptions, setNoteMenuOptions] = useState<{ id: string, x: number, y: number } | null>(null);
   const [noteSaveStatus, setNoteSaveStatus] = useState<'Saved' | 'Saving...'>('Saved');
   const [isNotesOpen, setIsNotesOpen] = useState(false);
@@ -401,29 +339,6 @@ export default function App() {
     });
   };
 
-  const parseDateValue = (value?: string | number | null): number | undefined => {
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value !== 'string' || !value.trim()) return undefined;
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? undefined : parsed;
-  };
-
-  const toChatSession = (session: any): ChatSession => {
-    const createdAt = parseDateValue(session?.created_at) ?? Date.now();
-    const updatedAt = parseDateValue(session?.updated_at) ?? createdAt;
-    const rawTitle = typeof session?.title === 'string' ? session.title.trim() : '';
-
-    return {
-      id: String(session?.id),
-      title: rawTitle || 'New chat',
-      createdAt,
-      updatedAt,
-    };
-  };
-
-  const sortChatSessionsByRecent = (sessions: ChatSession[]) => {
-    return [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
-  };
 
   const getChatConfigForSession = (
     sessionId: string | null | undefined,
@@ -496,11 +411,15 @@ export default function App() {
   };
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
 
-
-  // Account Settings State
-  const [accountFirstName, setAccountFirstName] = useState('');
-  const [accountLastName, setAccountLastName] = useState('');
-  const [accountEmail, setAccountEmail] = useState('');
+  const {
+    documents, setDocuments,
+    folders, setFolders,
+    notes, setNotes,
+    chatSessions, setChatSessions,
+    accountFirstName, setAccountFirstName,
+    accountLastName, setAccountLastName,
+    accountEmail, setAccountEmail
+  } = useWorkspaceData(currentView);
   const [accountPassword, setAccountPassword] = useState('');
   const [accountConfirmPassword, setAccountConfirmPassword] = useState('');
   const [showAccountPassword, setShowAccountPassword] = useState(false);
@@ -1178,16 +1097,7 @@ export default function App() {
   const handleOpenChatSession = async (sessionId: string) => {
     if (!sessionId) return;
     cancelActiveChatStream();
-    try {
-      const persistedMessages = await api.getChatMessages(sessionId).catch(() => []);
-      const { hydratedMessages, feedbackFromServer } = hydratePersistedMessages(persistedMessages || []);
-      setActiveChatSessionId(sessionId);
-      setActiveChatConfig(getChatConfigForSession(sessionId));
-      setMessages(hydratedMessages);
-      setMessageFeedback(feedbackFromServer);
-    } catch {
-      showToast('Could not load selected chat history.', 'warning');
-    }
+    setActiveChatSessionId(sessionId);
   };
 
   const handleStartNewChat = async () => {
@@ -1202,11 +1112,8 @@ export default function App() {
         ...prev.filter((session) => session.id !== normalizedSession.id),
       ]));
 
-      setActiveChatSessionId(normalizedSession.id);
       setChatConfigForSession(normalizedSession.id, initialConfigForNewSession);
-      setActiveChatConfig(normalizeChatSessionConfig(initialConfigForNewSession));
-      setMessages([]);
-      setMessageFeedback({});
+      setActiveChatSessionId(normalizedSession.id);
       showToast('New chat started.', 'info');
     } catch {
       showToast('Could not create a new chat session.', 'warning');
@@ -1229,97 +1136,51 @@ export default function App() {
     }
   }, [sessionChatConfigs]);
 
+  // 1. Auto-select the first session if none is selected
+  useEffect(() => {
+    if (currentView === 'workspace' && chatSessions.length > 0 && !activeChatSessionId) {
+      setActiveChatSessionId(chatSessions[0].id);
+    }
+  }, [currentView, chatSessions, activeChatSessionId]);
+
+  // 2. Load messages when the active session changes
   useEffect(() => {
     if (currentView !== 'workspace') return;
 
-    let cancelled = false;
-
-    const hydrateWorkspace = async () => {
-      try {
-        const user = await api.getMe();
-
-        const [docs, folderList, noteList, sessionList] = await Promise.all([
-          api.getDocuments().catch(() => []),
-          api.getFolders().catch(() => []),
-          api.getNotes().catch(() => []),
-          api.getChatSessions().catch(() => []),
-        ]);
-
-        if (cancelled) return;
-
-        setAccountFirstName(user.first_name || '');
-        setAccountLastName(user.last_name || '');
-        setAccountEmail(user.email || '');
-
-        setDocuments(
-          (docs || []).map((doc: any) => ({
-            id: String(doc.id),
-            name: doc.name,
-            mimeType: doc.mime_type,
-            folderId: doc.folder_id ? String(doc.folder_id) : undefined,
-            size: doc.size ?? undefined,
-            timestamp: parseDateValue(doc.created_at) ?? parseDateValue(doc.timestamp) ?? undefined,
-          }))
-        );
-
-        setFolders(
-          (folderList || []).map((folder: any) => ({
-            id: String(folder.id),
-            name: folder.name,
-            timestamp: parseDateValue(folder.created_at) ?? parseDateValue(folder.timestamp) ?? undefined,
-            isExpanded: true,
-          }))
-        );
-
-        if ((noteList || []).length > 0) {
-          setNotes(
-            noteList.map((note: any) => ({
-              id: String(note.id),
-              title: note.title,
-              content: note.content,
-              timestamp: Number(note.timestamp) || Date.now(),
-            }))
-          );
-        }
-
-        const normalizedSessions = sortChatSessionsByRecent((sessionList || []).map((session: any) => toChatSession(session)));
-        setChatSessions(normalizedSessions);
-
-        if (normalizedSessions.length > 0) {
-          const latestSessionId = normalizedSessions[0].id;
-          setActiveChatSessionId(latestSessionId);
-          setActiveChatConfig(getChatConfigForSession(latestSessionId));
-
-          const persistedMessages = await api.getChatMessages(latestSessionId).catch(() => []);
-          if (cancelled) return;
-
-          const { hydratedMessages, feedbackFromServer } = hydratePersistedMessages(persistedMessages || []);
-
-          setMessages(
-            hydratedMessages.length > 0
-              ? hydratedMessages
-              : []
-          );
-          setMessageFeedback(feedbackFromServer);
-        } else {
-          setActiveChatSessionId(null);
-          setActiveChatConfig(DEFAULT_CHAT_SESSION_CONFIG);
-          setMessages([]);
-          setMessageFeedback({});
-        }
-      } catch {
-        if (!cancelled) {
-          handleSignOut();
-          showToast('Session expired. Please sign in again.', 'warning');
-        }
+    if (!activeChatSessionId) {
+      if (chatSessions.length === 0) {
+        setActiveChatConfig(DEFAULT_CHAT_SESSION_CONFIG);
+        setMessages([]);
+        setMessageFeedback({});
       }
-    };
+      return;
+    }
 
-    void hydrateWorkspace();
+    setActiveChatConfig(getChatConfigForSession(activeChatSessionId));
+
+    let cancelled = false;
+    api.getChatMessages(activeChatSessionId)
+      .then((persistedMessages) => {
+        if (cancelled) return;
+        const { hydratedMessages, feedbackFromServer } = hydratePersistedMessages(persistedMessages || []);
+        setMessages(hydratedMessages.length > 0 ? hydratedMessages : []);
+        setMessageFeedback(feedbackFromServer);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to fetch messages', err);
+          if (isAuthError(err?.status, err?.message)) {
+            handleSignOut();
+            showToast('Session expired. Please sign in again.', 'warning');
+          }
+          setMessages([]);
+        }
+      });
+
     return () => {
       cancelled = true;
     };
-  }, [currentView]);
+  }, [currentView, activeChatSessionId]);
 
   const trimForPrompt = (text: string, maxLength = 220) => {
     const compact = text.replace(/\s+/g, ' ').trim();
