@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useWorkspaceData } from './hooks/useWorkspaceData';
 import { parseDateValue, toChatSession, sortChatSessionsByRecent } from './utils/chat';
 import { api, type CloudApiProvider, type CloudProviderValidationResult, type LocalEndpointType } from './services/api';
-import { Upload, FileText, X, Send, Bot, User, Loader2, File, Plus, Settings, Trash2, Database, Cpu, Pin, PanelRightClose, PanelRightOpen, Folder as FolderIcon, ChevronDown, ChevronRight, Edit2, CheckSquare, FolderPlus, Menu, Download, Eye, EyeOff, Check, ArrowDown, ArrowUp, Info, Merge, Search, Sparkles, Filter, SlidersHorizontal, XCircle, Mic, ThumbsUp, ThumbsDown, Copy, MoreVertical, RotateCcw } from 'lucide-react';
+import { Upload, FileText, X, Send, Bot, User, Loader2, File as FileIcon, Plus, Settings, Trash2, Database, Cpu, Pin, PanelRightClose, PanelRightOpen, Folder as FolderIcon, ChevronDown, ChevronRight, Edit2, CheckSquare, FolderPlus, Menu, Download, Eye, EyeOff, Check, ArrowDown, ArrowUp, Info, Merge, Search, Sparkles, Filter, SlidersHorizontal, XCircle, Mic, ThumbsUp, ThumbsDown, Copy, MoreVertical, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
@@ -369,8 +369,8 @@ export default function App() {
 
   const getFileIcon = (mimeType: string, className?: string, overrideColorClass?: string) => {
     const baseClass = className || "w-3.5 h-3.5";
-    if (mimeType === 'application/pdf') return <File className={`${baseClass} ${overrideColorClass || 'text-red-500'}`} />;
-    if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') return <File className={`${baseClass} ${overrideColorClass || 'text-orange-500'}`} />;
+    if (mimeType === 'application/pdf') return <FileIcon className={`${baseClass} ${overrideColorClass || 'text-red-500'}`} />;
+    if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') return <FileIcon className={`${baseClass} ${overrideColorClass || 'text-orange-500'}`} />;
     if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return <FileText className={`${baseClass} ${overrideColorClass || 'text-blue-500'}`} />;
     if (mimeType === 'text/plain') return <FileText className={`${baseClass} ${overrideColorClass || 'text-slate-400'}`} />;
     if (mimeType.startsWith('audio/')) return <Mic className={`${baseClass} ${overrideColorClass || 'text-fuchsia-500'}`} />;
@@ -569,6 +569,7 @@ export default function App() {
 
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [stagedPreviewUrl, setStagedPreviewUrl] = useState<string | null>(null);
   const [stagedPreviewType, setStagedPreviewType] = useState<string | null>(null);
@@ -2850,19 +2851,38 @@ export default function App() {
     });
   };
 
-  const convertNoteToSource = (note: Note) => {
-    const base64 = btoa(unescape(encodeURIComponent(note.content)));
-    const newDoc: Document = {
-      id: Math.random().toString(36).substring(7),
-      name: (note.title || 'Note') + '.txt',
-      mimeType: 'text/plain',
-      base64: base64,
-      size: base64.length,
-      timestamp: Date.now()
-    };
-    setDocuments(prev => [...prev, newDoc]);
-    setSelectedDocIds(prev => [...prev, newDoc.id]);
-    setSelectedNoteId(null);
+  const convertNoteToSource = async (note: Note) => {
+    setIsPreviewLoading(true); // Reuse preview loading for the "converting" state if needed, or just show a toast
+    try {
+      const blob = new Blob([note.content], { type: 'text/plain' });
+      const filename = (note.title || 'Note').replace(/[/\\?%*:|"<>]/g, '-') + '.txt';
+      const file = new File([blob], filename, { type: 'text/plain' });
+
+      const backendDoc = await api.uploadDocument(file);
+      
+      const normalizedDoc: Document = {
+        id: String(backendDoc.id),
+        name: backendDoc.name,
+        mimeType: backendDoc.mime_type,
+        folderId: backendDoc.folder_id ? String(backendDoc.folder_id) : undefined,
+        size: backendDoc.size,
+        timestamp: Date.now()
+      };
+
+      // Store in localforage for immediate preview
+      const base64 = btoa(unescape(encodeURIComponent(note.content)));
+      await localforage.setItem(normalizedDoc.id, base64);
+
+      setDocuments(prev => [...prev, normalizedDoc]);
+      setSelectedDocIds(prev => [...prev, normalizedDoc.id]);
+      setSelectedNoteId(null);
+      showToast(`Note converted to source: ${normalizedDoc.name}`, 'success');
+    } catch (err) {
+      console.error("Failed to convert note to source:", err);
+      showToast("Failed to convert note to source.", 'error');
+    } finally {
+      setIsPreviewLoading(false);
+    }
   };
 
   const testLocalConnection = async (
@@ -3291,10 +3311,33 @@ export default function App() {
   const handlePreviewDoc = async (doc: Document) => {
     setIsPreviewLoading(true);
     try {
-      const content = await localforage.getItem<string>(doc.id);
+      let content = await localforage.getItem<string>(doc.id);
+      if (!content) {
+        try {
+          const res = await api.getDocumentContent(doc.id);
+          content = res.content;
+          if (content) {
+            await localforage.setItem(doc.id, content);
+          }
+        } catch (err) {
+          console.error("Failed to fetch document content from API:", err);
+        }
+      }
+
       if (content) {
         setPreviewContent(content);
         setPreviewDoc(doc);
+
+        if (doc.mimeType === 'application/pdf') {
+           if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
+           const binaryString = atob(content);
+           const bytes = new Uint8Array(binaryString.length);
+           for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+           }
+           const blob = new Blob([bytes], { type: 'application/pdf' });
+           setPdfBlobUrl(URL.createObjectURL(blob));
+        }
 
         if (doc.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
            const binaryString = atob(content);
@@ -5749,7 +5792,13 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-              onClick={() => { setPreviewDoc(null); setPreviewContent(null); setIsPreviewLoading(false); }}
+              onClick={() => {
+                setPreviewDoc(null);
+                setPreviewContent(null);
+                setIsPreviewLoading(false);
+                if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
+                setPdfBlobUrl(null);
+              }}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -5765,7 +5814,13 @@ export default function App() {
                   <h3 className="text-[16px] font-medium text-slate-200">{previewDoc ? previewDoc.name : "Loading Preview..."}</h3>
                 </div>
                 <button
-                  onClick={() => { setPreviewDoc(null); setPreviewContent(null); setIsPreviewLoading(false); }}
+                  onClick={() => {
+                    setPreviewDoc(null);
+                    setPreviewContent(null);
+                    setIsPreviewLoading(false);
+                    if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
+                    setPdfBlobUrl(null);
+                  }}
                   className="p-2 text-slate-400 hover:text-slate-200 hover:bg-[#2a2a2d] rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5" />
@@ -5781,7 +5836,7 @@ export default function App() {
                   <>
                     {previewDoc.mimeType === 'application/pdf' ? (
                       <iframe
-                        src={`data:application/pdf;base64,${previewContent}`}
+                        src={pdfBlobUrl || `data:application/pdf;base64,${previewContent}`}
                         className="w-full h-full border-0"
                         title="PDF Preview"
                       />
@@ -5837,7 +5892,7 @@ export default function App() {
                       onClick={() => handlePreviewStaged(file)}
                     >
                       <div className="flex items-center gap-3 overflow-hidden">
-                        {file.type === 'application/pdf' ? <File className="w-4 h-4 text-red-400 shrink-0" /> : <FileText className="w-4 h-4 text-blue-400 shrink-0" />}
+                        {file.type === 'application/pdf' ? <FileIcon className="w-4 h-4 text-red-400 shrink-0" /> : <FileText className="w-4 h-4 text-blue-400 shrink-0" />}
                         <span className="text-[13px] text-slate-300 truncate">{file.name}</span>
                       </div>
                       <button

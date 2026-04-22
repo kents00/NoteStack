@@ -223,6 +223,19 @@ export const api = {
     return res.json();
   },
 
+  getDocumentContent: async (documentId: string) => {
+    const token = getToken();
+    if (!token) throw new Error('Not authenticated');
+    const res = await fetch(`${API_BASE_URL}/documents/${documentId}/content`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const detail = await parseErrorMessageFromResponse(res, 'Failed to fetch document content');
+      throw toApiError(detail, res.status);
+    }
+    return res.json(); // { content: "base64..." }
+  },
+
   // --- Folders ---
   getFolders: async () => {
     const token = getToken();
