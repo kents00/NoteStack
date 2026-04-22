@@ -1,4 +1,5 @@
 import os
+import base64
 from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -123,3 +124,27 @@ def delete_document(
     db.delete(document)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/{document_id}/content")
+def get_document_content(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.user_id == current_user.id)
+        .first()
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="Document record not found in database")
+
+    file_path = get_file_path(document.s3_key)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Document file not found on disk storage")
+
+    with open(file_path, "rb") as f:
+        content = f.read()
+
+    return {"content": base64.b64encode(content).decode("utf-8")}
