@@ -1,62 +1,70 @@
-import http from 'http';
-import https from 'https';
-
 export const config = {
-  api: {
-    bodyParser: false,
-  },
+  runtime: 'edge',
 };
 
-export default function handler(req, res) {
+export default async function handler(req) {
   const BACKEND_URL = process.env.BACKEND_URL;
   if (!BACKEND_URL) {
-    res.status(500).json({ detail: 'BACKEND_URL is not set' });
-    return;
+    return new Response(JSON.stringify({ detail: 'BACKEND_URL is not set' }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 
-  // Vercel populates req.query with the path params from the rewrite
-  let { path } = req.query;
-  const targetPath = Array.isArray(path) ? path.join('/') : path || '';
+  try {
+    const url = new URL(req.url);
+    
+    // Vercel rewrites add ?path=...
+    const pathParam = url.searchParams.get('path') || '';
+    
+    // Remove the `path` param from the query string to forward the rest
+    url.searchParams.delete('path');
+    const queryString = url.search;
 
-  // Extract query string minus the rewrite parameter
-  const originalUrl = new URL(req.url, `http://${req.headers.host}`);
-  originalUrl.searchParams.delete('path');
-  const queryString = originalUrl.search;
+    const targetUrl = `${BACKEND_URL}/api/${pathParam}${queryString}`;
 
-  const targetUrlStr = `${BACKEND_URL}/api/${targetPath}${queryString}`;
-  const targetUrl = new URL(targetUrlStr);
+    // Create a new headers object to forward
+    const forwardHeaders = new Headers(req.headers);
+    
+    // Crucial: Delete host and connection headers so fetch can set them correctly for the backend
+    forwardHeaders.delete('host');
+    forwardHeaders.delete('connection');
+    forwardHeaders.delete('keep-alive');
+    forwardHeaders.delete('upgrade');
+    forwardHeaders.delete('x-forwarded-host');
+    forwardHeaders.delete('x-forwarded-proto');
+    forwardHeaders.delete('x-forwarded-for');
 
-  const forwardHeaders = { ...req.headers };
-  // The host header must match the target backend
-  delete forwardHeaders.host;
+    const fetchOptions = {
+      method: req.method,
+      headers: forwardHeaders,
+      redirect: 'manual',
+    };
 
-  const options = {
-    hostname: targetUrl.hostname,
-    port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
-    path: targetUrl.pathname + targetUrl.search,
-    method: req.method,
-    headers: forwardHeaders,
-  };
-
-  const requestModule = targetUrl.protocol === 'https:' ? https : http;
-
-  const proxyReq = requestModule.request(options, (proxyRes) => {
-    // Forward the status and headers exactly as received
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
-    // Pipe the response body back to the client (supports SSE natively)
-    proxyRes.pipe(res, { end: true });
-  });
-
-  proxyReq.on('error', (err) => {
-    console.error('Proxy error:', err);
-    if (!res.headersSent) {
-      res.status(502).json({ detail: 'Backend unavailable', error: err.message, targetUrlStr });
-    } else {
-      res.end();
+    // Only set body for methods that allow it
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      fetchOptions.body = req.body;
+      fetchOptions.duplex = 'half'; // Required for Node 18+ / Edge fetch when passing a stream
     }
-  });
 
-  // Pipe the raw incoming request body directly to the backend
-  // This preserves multipart/form-data for file uploads
-  req.pipe(proxyReq, { end: true });
+    const upstreamResponse = await fetch(targetUrl, fetchOptions);
+
+    // Filter response headers
+    const responseHeaders = new Headers(upstreamResponse.headers);
+    responseHeaders.delete('content-encoding'); // Let Vercel handle compression
+    responseHeaders.delete('transfer-encoding');
+
+    // Return the response stream natively
+    return new Response(upstreamResponse.body, {
+      status: upstreamResponse.status,
+      statusText: upstreamResponse.statusText,
+      headers: responseHeaders,
+    });
+  } catch (error) {
+    console.error("Edge Proxy fetch error:", error);
+    return new Response(
+      JSON.stringify({ detail: 'Backend unavailable', error: error.message }),
+      { status: 502, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
 }
