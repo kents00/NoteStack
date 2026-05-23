@@ -1,7 +1,7 @@
 import http from 'http';
 import https from 'https';
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   const BACKEND_URL = process.env.BACKEND_URL;
   if (!BACKEND_URL) {
     res.status(500).json({ detail: 'BACKEND_URL is not set' });
@@ -17,67 +17,72 @@ export default function handler(req, res) {
     const queryString = originalUrl.search;
 
     const targetUrlStr = `${BACKEND_URL}/api/${targetPath}${queryString}`;
-    const targetUrl = new URL(targetUrlStr);
 
-    const forwardHeaders = { ...req.headers };
-    delete forwardHeaders.host;
-    delete forwardHeaders.connection;
-    delete forwardHeaders['keep-alive'];
-    // Since we reconstruct the body, we must remove chunked encoding and let Content-Length rule
-    delete forwardHeaders['transfer-encoding'];
+    const forwardHeaders = new Headers();
+    for (const [key, value] of Object.entries(req.headers)) {
+      const lowerKey = key.toLowerCase();
+      // Do not forward Vercel-specific or connection headers
+      if (!['host', 'connection', 'keep-alive', 'transfer-encoding', 'content-length'].includes(lowerKey)) {
+        if (Array.isArray(value)) {
+          value.forEach(v => forwardHeaders.append(key, v));
+        } else {
+          forwardHeaders.set(key, value);
+        }
+      }
+    }
 
-    const options = {
-      hostname: targetUrl.hostname,
-      port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
-      path: targetUrl.pathname + targetUrl.search,
+    const fetchOptions = {
       method: req.method,
       headers: forwardHeaders,
+      redirect: 'manual',
     };
 
-    const requestModule = targetUrl.protocol === 'https:' ? https : http;
-
-    const proxyReq = requestModule.request(options, (proxyRes) => {
-      res.writeHead(proxyRes.statusCode, proxyRes.headers);
-      proxyRes.pipe(res, { end: true });
-    });
-
-    proxyReq.on('error', (err) => {
-      console.error('Proxy error:', err);
-      if (!res.headersSent) {
-        res.status(502).json({ detail: 'Backend unavailable', error: err.message, targetUrlStr });
-      } else {
-        res.end();
-      }
-    });
-
-    if (req.method === 'GET' || req.method === 'HEAD') {
-      proxyReq.end();
-    } else {
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
       let bodyData;
-      if (req.body) {
-        if (Buffer.isBuffer(req.body) || typeof req.body === 'string') {
-          // Raw buffers (like multipart file uploads) or raw strings
-          bodyData = req.body;
-        } else if (typeof req.body === 'object') {
-          // Vercel automatically parsed JSON or Form-Urlencoded
-          if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
-            bodyData = new URLSearchParams(req.body).toString();
-          } else {
-            bodyData = JSON.stringify(req.body);
-          }
+      if (Buffer.isBuffer(req.body) || typeof req.body === 'string') {
+        bodyData = req.body;
+      } else if (typeof req.body === 'object') {
+        if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
+          bodyData = new URLSearchParams(req.body).toString();
+        } else {
+          bodyData = JSON.stringify(req.body);
         }
       }
       
       if (bodyData) {
-        // The reconstructed body might be a slightly different size than the original request.
-        // We MUST update the content-length header to prevent the backend from hanging.
-        proxyReq.setHeader('content-length', Buffer.byteLength(bodyData));
-        proxyReq.write(bodyData);
+        fetchOptions.body = bodyData;
       }
-      proxyReq.end();
+    }
+
+    const response = await fetch(targetUrlStr, fetchOptions);
+
+    response.headers.forEach((value, key) => {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey !== 'transfer-encoding' && lowerKey !== 'content-encoding') {
+        res.setHeader(key, value);
+      }
+    });
+
+    res.status(response.status);
+
+    if (response.body) {
+      // Stream the response back to the client
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
+    } else {
+      res.end();
     }
   } catch (error) {
-    console.error('Proxy init error:', error);
-    res.status(500).json({ detail: 'Proxy setup failed', error: error.message });
+    console.error('Proxy fetch error:', error);
+    res.status(502).json({ 
+      detail: 'Backend unavailable', 
+      error: error.message, 
+      targetUrlStr 
+    });
   }
 }
