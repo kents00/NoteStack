@@ -543,7 +543,9 @@ def _build_local_llm_candidates(url: str) -> list[tuple[str, str]]:
     suffix = parsed.path.rstrip('/')
     suffix = '' if suffix == '/' else suffix
 
-    if parsed.port is None:
+    if 'ngrok' in host or scheme == 'https':
+        port_candidates = [parsed.port] if parsed.port else [None]
+    elif parsed.port is None:
         port_candidates = [1234, 11434]
     elif parsed.port in (1234, 11434):
         port_candidates = [parsed.port, 11434 if parsed.port == 1234 else 1234]
@@ -569,8 +571,8 @@ def _build_local_llm_candidates(url: str) -> list[tuple[str, str]]:
 
     return [
         (
-            f'{scheme}://{candidate_host}:{port}',
-            f'{scheme}://{candidate_host}:{port}{suffix}'
+            f'{scheme}://{candidate_host}:{port}' if port is not None else f'{scheme}://{candidate_host}',
+            f'{scheme}://{candidate_host}:{port}{suffix}' if port is not None else f'{scheme}://{candidate_host}{suffix}'
         )
         for candidate_host in candidate_hosts
         for port in port_candidates
