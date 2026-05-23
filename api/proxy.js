@@ -25,8 +25,15 @@ export default async function handler(req, res) {
 
   // Determine body
   let body = undefined;
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
+    const contentType = req.headers['content-type'] || '';
+    if (typeof req.body === 'string') {
+      body = req.body;
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+      body = new URLSearchParams(req.body).toString();
+    } else {
+      body = JSON.stringify(req.body);
+    }
   }
 
   try {
