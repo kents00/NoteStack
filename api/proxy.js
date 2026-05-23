@@ -1,6 +1,13 @@
 import http from 'http';
 import https from 'https';
 
+export const config = {
+  api: {
+    bodyParser: false,
+    externalResolver: true,
+  },
+};
+
 export default async function handler(req, res) {
   const BACKEND_URL = process.env.BACKEND_URL;
   if (!BACKEND_URL) {
@@ -33,26 +40,25 @@ export default async function handler(req, res) {
       }
     }
 
+    // Forward the original Content-Length if available
+    if (req.headers['content-length']) {
+      forwardHeaders.set('content-length', req.headers['content-length']);
+    }
+
     const fetchOptions = {
       method: req.method,
       headers: forwardHeaders,
       redirect: 'manual',
     };
 
-    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
-      let bodyData;
-      if (Buffer.isBuffer(req.body) || typeof req.body === 'string') {
-        bodyData = req.body;
-      } else if (typeof req.body === 'object') {
-        if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
-          bodyData = new URLSearchParams(req.body).toString();
-        } else {
-          bodyData = JSON.stringify(req.body);
-        }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      // Read the raw request stream into a buffer
+      const chunks = [];
+      for await (const chunk of req) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
       }
-      
-      if (bodyData) {
-        fetchOptions.body = bodyData;
+      if (chunks.length > 0) {
+        fetchOptions.body = Buffer.concat(chunks);
       }
     }
 
