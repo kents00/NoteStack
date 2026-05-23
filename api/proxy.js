@@ -50,21 +50,21 @@ export default function handler(req, res) {
       }
     });
 
-    // Vercel Serverless Functions consume the incoming stream and populate req.body.
-    // If we try to pipe `req`, it will hang because the stream has already ended.
     if (req.method === 'GET' || req.method === 'HEAD') {
       proxyReq.end();
-    } else if (req.body) {
+    } else {
       let bodyData;
-      if (Buffer.isBuffer(req.body) || typeof req.body === 'string') {
-        // Raw buffers (like multipart file uploads) or raw strings
-        bodyData = req.body;
-      } else if (typeof req.body === 'object') {
-        // Vercel automatically parsed JSON or Form-Urlencoded
-        if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
-          bodyData = new URLSearchParams(req.body).toString();
-        } else {
-          bodyData = JSON.stringify(req.body);
+      if (req.body) {
+        if (Buffer.isBuffer(req.body) || typeof req.body === 'string') {
+          // Raw buffers (like multipart file uploads) or raw strings
+          bodyData = req.body;
+        } else if (typeof req.body === 'object') {
+          // Vercel automatically parsed JSON or Form-Urlencoded
+          if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
+            bodyData = new URLSearchParams(req.body).toString();
+          } else {
+            bodyData = JSON.stringify(req.body);
+          }
         }
       }
       
@@ -75,9 +75,6 @@ export default function handler(req, res) {
         proxyReq.write(bodyData);
       }
       proxyReq.end();
-    } else {
-      // Fallback if Vercel hasn't consumed the body
-      req.pipe(proxyReq, { end: true });
     }
   } catch (error) {
     console.error('Proxy init error:', error);
