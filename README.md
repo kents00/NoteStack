@@ -166,6 +166,37 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 Wait for `Application startup complete.` in the console.
 
+### Option C — VPS Deployment (Digital Ocean)
+
+**1. Run the Docker container from Docker Hub:**
+Assuming you have built and pushed your image to Docker Hub, pull and run it on your VPS:
+```bash
+docker pull your-dockerhub-username/notestack-backend:latest
+docker run -d --name notestack-backend -p 8000:8000 --env-file .env your-dockerhub-username/notestack-backend:latest
+```
+
+**2. Update changes from Docker Hub:**
+When you push a new image and want to update the running container on your VPS:
+```bash
+docker pull your-dockerhub-username/notestack-backend:latest
+docker stop notestack-backend
+docker rm notestack-backend
+docker run -d --name notestack-backend -p 8000:8000 --env-file .env your-dockerhub-username/notestack-backend:latest
+```
+
+**3. Connecting to a Local LLM via Ngrok:**
+If you want the deployed backend to access a local LLM (like LM Studio or Ollama) running on your personal machine:
+1. On your personal machine, start your LLM and expose its port using ngrok:
+   ```bash
+   # For LM Studio (default port 1234)
+   ngrok http 1234
+   
+   # For Ollama (default port 11434)
+   ngrok http 11434
+   ```
+2. In the NoteStack frontend UI, enter the ngrok forwarding URL **and append `:443`** to the end (e.g., `https://your-url.ngrok-free.dev:443`).
+3. The remote VPS backend will now be able to communicate with your personal machine's local LLM.
+
 ---
 
 ## Configuration
