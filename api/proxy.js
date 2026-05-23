@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   // Forward select headers, skip hop-by-hop headers
   const skipHeaders = new Set([
     'host', 'connection', 'transfer-encoding', 'keep-alive',
-    'upgrade', 'proxy-connection', 'te', 'trailer',
+    'upgrade', 'proxy-connection', 'te', 'trailer', 'content-length'
   ]);
 
   const forwardHeaders = {};
@@ -78,6 +78,7 @@ export default async function handler(req, res) {
     res.writeHead(upstream.status, responseHeaders);
     res.end(data);
   } catch (error) {
-    res.status(502).json({ detail: 'Backend unavailable' });
+    console.error("Proxy fetch error:", error);
+    res.status(502).json({ detail: 'Backend unavailable', error: error.message, targetUrl });
   }
 }
