@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
 type ApiError = Error & { status?: number };
 export type CloudApiProvider = 'gemini' | 'openai' | 'anthropic' | 'cerebras' | 'openrouter' | 'openai_compatible';
