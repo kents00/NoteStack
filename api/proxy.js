@@ -8,18 +8,20 @@ export default async function handler(req, res) {
     return;
   }
 
+  let targetUrlStr = '';
+
   try {
-    const originalUrl = new URL(req.url, `http://${req.headers.host}`);
-    let { path } = req.query;
+    const originalUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    let { path } = req.query || {};
     const targetPath = Array.isArray(path) ? path.join('/') : (path || '');
     
     originalUrl.searchParams.delete('path');
     const queryString = originalUrl.search;
 
-    const targetUrlStr = `${BACKEND_URL}/api/${targetPath}${queryString}`;
+    targetUrlStr = `${BACKEND_URL}/api/${targetPath}${queryString}`;
 
     const forwardHeaders = new Headers();
-    for (const [key, value] of Object.entries(req.headers)) {
+    for (const [key, value] of Object.entries(req.headers || {})) {
       const lowerKey = key.toLowerCase();
       // Do not forward Vercel-specific or connection headers
       if (!['host', 'connection', 'keep-alive', 'transfer-encoding', 'content-length'].includes(lowerKey)) {
