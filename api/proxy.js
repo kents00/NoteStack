@@ -27,12 +27,18 @@ export default async function handler(req, res) {
   let body = undefined;
   if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
     const contentType = req.headers['content-type'] || '';
-    if (typeof req.body === 'string') {
-      body = req.body;
+    
+    let rawBody = req.body;
+    if (Buffer.isBuffer(req.body)) {
+      rawBody = req.body.toString('utf8');
+    }
+
+    if (typeof rawBody === 'string') {
+      body = rawBody;
     } else if (contentType.includes('application/x-www-form-urlencoded')) {
-      body = new URLSearchParams(req.body).toString();
+      body = new URLSearchParams(rawBody).toString();
     } else {
-      body = JSON.stringify(req.body);
+      body = JSON.stringify(rawBody);
     }
   }
 
