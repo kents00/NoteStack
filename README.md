@@ -180,7 +180,7 @@ When you push a new image and want to update the running container on your VPS:
 ```bash
 docker pull your-dockerhub-username/notestack-backend:latest
 docker stop notestack-backend
-docker rm notestack-backend
+docker rm -f notestack-backend
 docker run -d --name notestack-backend -p 8000:8000 --env-file .env your-dockerhub-username/notestack-backend:latest
 ```
 
@@ -190,7 +190,7 @@ If you want the deployed backend to access a local LLM (like LM Studio or Ollama
    ```bash
    # For LM Studio (default port 1234)
    ngrok http 1234
-   
+
    # For Ollama (default port 11434)
    ngrok http 11434
    ```
