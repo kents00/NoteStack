@@ -45,6 +45,9 @@ export default async function handler(req, res) {
       forwardHeaders.set('content-length', req.headers['content-length']);
     }
 
+    // Bypass ngrok warning page for server-to-server API requests
+    forwardHeaders.set('ngrok-skip-browser-warning', 'true');
+
     const fetchOptions = {
       method: req.method,
       headers: forwardHeaders,
