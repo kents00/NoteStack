@@ -130,7 +130,15 @@ The app will be available at **`http://localhost:3000`**.
 1. Push your code to a GitHub repository.
 2. In Vercel, create a new project and import your repository.
 3. Set the **Root Directory** to `frontend`.
-4. In the **Environment Variables** section, add your backend URL. If you are using the Next.js API proxy (e.g., `api/proxy.js`), you may need to configure `BACKEND_URL` to point to your VPS (e.g., `http://157.230.57.96:8000`).
+4. In the **Environment Variables** section, add your backend URL. 
+
+> **Important note on chat streaming in Vercel:**
+> By default, Vercel Serverless Functions (`api/proxy.js`) buffer streaming responses and have a strict execution timeout (10s on the free tier). To bypass this and stream chat successfully, the frontend must connect to the backend directly. However, since Vercel serves over HTTPS, browsers will block direct requests to a raw HTTP IP address due to Mixed Content rules. 
+>
+> **The Fix:** Provide your VPS backend with an HTTPS URL using **ngrok** (see the Backend README). Then configure these environment variables in Vercel:
+> - `BACKEND_URL` = `https://<your-ngrok-id>.ngrok-free.app` (Used for standard API calls)
+> - `VITE_BACKEND_DIRECT_URL` = `https://<your-ngrok-id>.ngrok-free.app` (Forces the browser to connect directly for SSE chat streaming)
+
 5. Click **Deploy**. Vercel will automatically detect Vite and build your frontend.
 
 ---
