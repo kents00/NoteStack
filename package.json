@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/utils/**/*.test.ts"
+    "test": "tsx --test src/utils/**/*.test.ts",
+    "ngrok": "ngrok http --domain=charter-masses-disbelief.ngrok-free.dev 8000"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
