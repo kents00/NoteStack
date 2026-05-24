@@ -196,7 +196,7 @@ If you deployed your frontend to Vercel (HTTPS), connecting to `http://your-ip:8
    ```bash
    nohup ngrok http --domain=charter-masses-disbelief.ngrok-free.dev 8000 > /dev/null 2>&1 &
    ```
-   
+
    **Option B: Permanent background service (auto-starts on reboot)**
    1. Create the service file: `sudo nano /etc/systemd/system/ngrok.service`
    2. Paste the configuration (Note: use `which ngrok` to find your exact path, usually `/snap/bin/ngrok`):
@@ -232,6 +232,9 @@ docker pull kentsdev/notestack-backend:latest
 docker stop notestack-backend
 docker rm -f notestack-backend
 docker run -d --name notestack-backend -p 8000:8000 --env-file .env kentsdev/notestack-backend:latest
+
+# View the logs
+docker logs -f notestack-backend
 ```
 
 **5. Connecting to a Local LLM via Ngrok:**
