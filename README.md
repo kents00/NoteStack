@@ -168,14 +168,34 @@ Wait for `Application startup complete.` in the console.
 
 ### Option C — VPS Deployment (Digital Ocean)
 
-**1. Run the Docker container from Docker Hub:**
+**1. Prevent Out-of-Memory (OOM) Crashes on small droplets:**
+The local `all-MiniLM-L6-v2` embedding model requires decent RAM to load into memory. If you are on a basic droplet (e.g., 512MB or 1GB RAM), add a Swap file before starting the container:
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+```
+
+**2. Run the Docker container from Docker Hub:**
 Assuming you have built and pushed your image to Docker Hub, pull and run it on your VPS:
 ```bash
 docker pull kentsdev/notestack-backend:latest
 docker run -d --name notestack-backend -p 8000:8000 --env-file .env kentsdev/notestack-backend:latest
 ```
 
-**2. Update changes from Docker Hub:**
+**3. Securing the Backend with Ngrok (Required for Vercel Frontend):**
+If you deployed your frontend to Vercel (HTTPS), connecting to `http://your-ip:8000` directly is blocked by browsers due to Mixed Content policies. To fix this and bypass Vercel's strict 10s Serverless timeout for chat streaming, expose your backend via ngrok:
+1. On your VPS, install and run ngrok:
+   ```bash
+   snap install ngrok
+   ngrok config add-authtoken <your_ngrok_token>
+   ngrok http 8000
+   ```
+2. Copy the resulting HTTPS URL (e.g., `https://abcdef.ngrok-free.app`).
+3. Set this URL as both `BACKEND_URL` and `VITE_BACKEND_DIRECT_URL` in your Vercel Project Environment Variables.
+
+**4. Update changes from Docker Hub:**
 When you push a new image and want to update the running container on your VPS:
 ```bash
 docker pull kentsdev/notestack-backend:latest
@@ -184,7 +204,7 @@ docker rm -f notestack-backend
 docker run -d --name notestack-backend -p 8000:8000 --env-file .env kentsdev/notestack-backend:latest
 ```
 
-**3. Connecting to a Local LLM via Ngrok:**
+**5. Connecting to a Local LLM via Ngrok:**
 If you want the deployed backend to access a local LLM (like LM Studio or Ollama) running on your personal machine:
 1. On your personal machine, start your LLM and expose its port using ngrok:
    ```bash
