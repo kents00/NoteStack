@@ -190,9 +190,39 @@ If you deployed your frontend to Vercel (HTTPS), connecting to `http://your-ip:8
    ```bash
    snap install ngrok
    ngrok config add-authtoken <your_ngrok_token>
-   ngrok http 8000
    ```
-2. Copy the resulting HTTPS URL (e.g., `https://abcdef.ngrok-free.app`).
+
+   **Option A: Quick background run (resets on reboot)**
+   ```bash
+   nohup ngrok http --domain=charter-masses-disbelief.ngrok-free.dev 8000 > /dev/null 2>&1 &
+   ```
+   
+   **Option B: Permanent background service (auto-starts on reboot)**
+   1. Create the service file: `sudo nano /etc/systemd/system/ngrok.service`
+   2. Paste the configuration (Note: use `which ngrok` to find your exact path, usually `/snap/bin/ngrok`):
+      ```ini
+      [Unit]
+      Description=ngrok
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=root
+      ExecStart=/snap/bin/ngrok http --domain=charter-masses-disbelief.ngrok-free.dev 8000
+      Restart=on-failure
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+      ```
+   3. Start and enable it:
+      ```bash
+      sudo systemctl daemon-reload
+      sudo systemctl enable ngrok
+      sudo systemctl start ngrok
+      ```
+
+2. Copy the resulting HTTPS URL (or your static domain).
 3. Set this URL as both `BACKEND_URL` and `VITE_BACKEND_DIRECT_URL` in your Vercel Project Environment Variables.
 
 **4. Update changes from Docker Hub:**
