@@ -10,8 +10,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 CHROMA_PERSIST_DIR = "chroma_data"
 
 # Use ChromaDB's built-in ONNX embedding function (all-MiniLM-L6-v2 via onnxruntime).
-# This avoids loading PyTorch and keeps memory well under the 512 MB Render free tier limit.
-_embed_fn = embedding_functions.DefaultEmbeddingFunction()
+# Initialized lazily inside process_document_background to avoid downloading the model
+# at container startup — the 79 MB ONNX download only happens when a document is processed.
 
 
 def process_document_background(document_id: str, file_path: str, mime_type: str):
@@ -52,6 +52,8 @@ def process_document_background(document_id: str, file_path: str, mime_type: str
         ]
 
         # 4. Embed and store via ChromaDB native client (ONNX — no PyTorch)
+        # Lazy-init here so the model is only loaded when actually needed.
+        _embed_fn = embedding_functions.DefaultEmbeddingFunction()
         client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
         collection = client.get_or_create_collection(
             name="notestack_docs",
