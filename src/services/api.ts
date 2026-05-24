@@ -1,4 +1,10 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+// Streaming chat bypasses the Vercel proxy to avoid FUNCTION_INVOCATION_TIMEOUT.
+// Falls back to the proxied URL when no direct URL is configured (e.g. local dev).
+const DIRECT_STREAM_BASE = (import.meta.env.VITE_BACKEND_DIRECT_URL || '').replace(/\/$/, '');
+const STREAM_CHAT_URL = DIRECT_STREAM_BASE
+  ? `${DIRECT_STREAM_BASE}/api/chat/`
+  : `${API_BASE_URL}/chat/`;
 
 type ApiError = Error & { status?: number };
 export type CloudApiProvider = 'gemini' | 'openai' | 'anthropic' | 'cerebras' | 'openrouter' | 'openai_compatible';
@@ -472,7 +478,9 @@ export const api = {
     return res.json() as Promise<CloudProviderValidationResult>;
   },
 
-  // Returns a fetch Response that yields an SSE stream
+  // Returns a fetch Response that yields an SSE stream.
+  // Calls the backend directly (not through the Vercel proxy) to avoid
+  // FUNCTION_INVOCATION_TIMEOUT on long-running LLM streaming responses.
   streamChat: (requestBody: {
     messages: { role: string; text: string }[];
     document_ids: string[];
@@ -485,7 +493,7 @@ export const api = {
     system_instructions?: string;
   }, options?: { signal?: AbortSignal }) => {
     const token = getToken();
-    return fetch(`${API_BASE_URL}/chat/`, {
+    return fetch(STREAM_CHAT_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
