@@ -171,17 +171,17 @@ Wait for `Application startup complete.` in the console.
 **1. Run the Docker container from Docker Hub:**
 Assuming you have built and pushed your image to Docker Hub, pull and run it on your VPS:
 ```bash
-docker pull your-dockerhub-username/notestack-backend:latest
-docker run -d --name notestack-backend -p 8000:8000 --env-file .env your-dockerhub-username/notestack-backend:latest
+docker pull kentsdev/notestack-backend:latest
+docker run -d --name notestack-backend -p 8000:8000 --env-file .env kentsdev/notestack-backend:latest
 ```
 
 **2. Update changes from Docker Hub:**
 When you push a new image and want to update the running container on your VPS:
 ```bash
-docker pull your-dockerhub-username/notestack-backend:latest
+docker pull kentsdev/notestack-backend:latest
 docker stop notestack-backend
 docker rm -f notestack-backend
-docker run -d --name notestack-backend -p 8000:8000 --env-file .env your-dockerhub-username/notestack-backend:latest
+docker run -d --name notestack-backend -p 8000:8000 --env-file .env kentsdev/notestack-backend:latest
 ```
 
 **3. Connecting to a Local LLM via Ngrok:**
